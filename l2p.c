@@ -1,16 +1,18 @@
 
 /*
- * updated
  * todo  :
 
-1) pretty print  , pvals  if want raw data frame DOUBLE CHECK AGAINST EMAIL
-2) Another column will be called “%Gene Hits per Pathway”, explained as  (A/(A+B))   
-3) Change names of columns  
-4) bench marks permute vs. non . plot results. 
-5) make sure custom works.
+1) make sure custom works.
+2) updategenes()
+3) ensembl2gene()
+4) pretty print  , pvals  if want raw data frame DOUBLE CHECK AGAINST EMAIL
+5) Another column will be called “%Gene Hits per Pathway”, explained as  (A/(A+B))   
+6) bench marks permute vs. non . plot results. 
 
 vi l2p2.c ; make
 gcc --Wall -Os -o l2p2 pwgenes.c small.c
+
+example command line debug: cat deglist | valgrind -v --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes  ./l2p -permute
 
 NUMBER_HITS … becomes Significant genes IN Pathway (A)
 NUMBER_MISSES … becomes Non-Significant genes IN Pathway (B)
@@ -211,8 +213,10 @@ unsigned int real_genect = 0;
 unsigned int aug_gene_ct = 0;
 unsigned int *auguniverse;
 unsigned int n_sig_paths = 0;
+#if 0
 FILE *path_gene_countsfile;
 FILE *gene_path_countsfile;
+#endif
 
 
 
@@ -472,6 +476,7 @@ fclose(fp);
     qsort(ro,n,sizeof(struct ordertype),cmp_ordertype_by_val);
 #endif
     po = (struct ordertype *)malloc((sizeof(struct ordertype))*n);
+    memset(po,0,(sizeof(struct ordertype))*n);
     for (j=0;j<n;j++)
     {
         (po+j)->val = (double)pvals[j];
@@ -1037,7 +1042,7 @@ fprintf(stderr,"after blocking  \n");
 
 #endif
 
-static inline void shuffle(unsigned int s[], int n)
+inline void shuffle(unsigned int s[], int n)
 {
     int i,j;
     unsigned int ui;
@@ -1082,7 +1087,7 @@ void free_tree(struct tree_type *node)
     return;
 }
 
-static inline void put_tree_to_array(struct tree_type *node, unsigned int puthere[], int *index_ptr)
+void put_tree_to_array(struct tree_type *node, unsigned int puthere[], int *index_ptr)
 {
     if (node != (void *)0)
     {
@@ -1090,6 +1095,18 @@ static inline void put_tree_to_array(struct tree_type *node, unsigned int puther
         puthere[*index_ptr] = node->val;
         *index_ptr = *index_ptr + 1;
         put_tree_to_array(node->right,puthere,index_ptr);
+    }
+    return;
+}
+
+void free_tree_with_count(struct tree_with_count *node)
+{
+    if (node)
+    {
+        if (node->all_gene_paths) free(node->all_gene_paths);
+        if (node->left) free_tree_with_count(node->left); // recursive calls  
+        if (node->right)free_tree_with_count(node->right);
+        free(node); 
     }
     return;
 }
@@ -1152,14 +1169,14 @@ int put_to_tree(unsigned int this_gene, struct tree_with_count *head) // tree be
      }
 }
 // RICH: Beginning of my code
-static inline void malloc_pathpointers(struct tree_with_count *node) // counts aligned with universe (real_universe)
+void malloc_pathpointers(struct tree_with_count *node) // counts aligned with universe (real_universe)
 {
     // int i;
 // rpf     static int degindex = 0;
-    if (node != (void *)0)
+    if (node)
     {
         malloc_pathpointers(node->left);
-        node->all_gene_paths = malloc(sizeof(struct used_path_type *)*node->count);
+        node->all_gene_paths = malloc(sizeof(struct used_path_type *)*(node->count));
         if (!node->all_gene_paths)
         {
             fprintf(stderr,"ERROR: not enough memory in malloc_pathpointers()\n"); fflush(stderr);
@@ -1168,6 +1185,7 @@ static inline void malloc_pathpointers(struct tree_with_count *node) // counts a
     }
     return;
 }
+
 int path_pointers_to_tree(unsigned int this_gene, struct used_path_type *this_path, struct tree_with_count *head)
 // following put_to_tree, but tree is already there
 // I think right, have to find the unsorted genes here, this is guide for filling the pointer
@@ -1223,7 +1241,8 @@ static inline void put_count_tree_to_array(struct tree_with_count *node, unsigne
         gene_path_cts[*index_ptr] = node->count;
         ++*index_ptr;
 #if NELSON_C
-        fprintf(gene_path_countsfile, "%d\t%d\n", node->val, node->count);
+// debug
+        if (gene_path_countsfile) fprintf(gene_path_countsfile, "%d\t%d\n", node->val, node->count);
 #endif
         for (ui = 0; ui < node->count; ui++)
         {
@@ -1288,20 +1307,24 @@ int degs_to_tree(unsigned int this_gene, struct tree_with_count *head) // tree b
      }
 }
 
-void chooseAugRandList(unsigned int n, unsigned int m, unsigned int seed, unsigned int *randlist) // n is size of augmented gene universe, m number to choose
+static void chooseAugRandList(unsigned int n, unsigned int m, unsigned int seed, unsigned int *randlist) // n is size of augmented gene universe, m number to choose
 {
     unsigned int i,j;
     unsigned int randint;
     unsigned int randgene;
     double randrslt;
-    //double scale = (double) n/RAND_MAX;
     double scale = (double) (n-1)/(RAND_MAX);
 #ifdef L2P_USING_R
-    GetRNGstate();
+   // method to shut up compiler warnings 
+#define UNUSED(x) (void)(x)
+UNUSED(seed);
+    // user can set the seed, by calling a function like this  set.seed(12345) , before calling
+    // don't need to do this :  GetRNGstate();
 #else
     static int inited_random_flag = 0;
-    if (inited_random_flag == 0)  // should go elsewhere; where do we set for test run (fixed seed)?
-    {
+    if (inited_random_flag == 0)  
+    {      // should go elsewhere; where do we set for test run (fixed seed)?
+           // for non R, the seed gets passed in as a paramter.  0 means let this code decide (randome based on time and process id "PID" )
         if (seed != 0) srand(seed);
         else srand(time(NULL) + getpid());
         inited_random_flag = 1;
@@ -1310,7 +1333,11 @@ void chooseAugRandList(unsigned int n, unsigned int m, unsigned int seed, unsign
 #endif
     for (i=0;i<m;)
     {
+#ifdef L2P_USING_R
+        randrslt = (int)(unif_rand() * (double)i)+1;   // unif_rand() appears to return between 0.0 and 1.0
+#else
         randrslt = rand();
+#endif
         randint = randrslt*scale+1;
         randgene = auguniverse[randint];
         j = 0;
@@ -1328,7 +1355,7 @@ void chooseAugRandList(unsigned int n, unsigned int m, unsigned int seed, unsign
 }
 
 
-void chooseRandList(unsigned int n, unsigned int m, unsigned int *seed, unsigned int *randlist) // n is size of augmented gene universe, m number to choose
+void chooseRandList(unsigned int n, unsigned int m, int seed, unsigned int *randlist) // n is size of augmented gene universe, m number to choose
 {
     unsigned int i;
     double randrslt;
@@ -1338,19 +1365,24 @@ void chooseRandList(unsigned int n, unsigned int m, unsigned int *seed, unsigned
     // unsigned int randgene;
     //double scale = (double) n/RAND_MAX;
 #ifdef L2P_USING_R
-    GetRNGstate();
+UNUSED(seed);
+    //      GetRNGstate();
 #else
     static int inited_random_flag = 0;
     if (inited_random_flag == 0)  // should go elsewhere; where do we set for test run (fixed seed)?
     {
-        if (*seed != 0) srand(*seed);
+        if (seed != 0) srand(seed);
         else srand(time(NULL) + getpid());
         inited_random_flag = 1;
     }
 #endif
-    for (i=0;i<m;i++)
+    for (i=0 ; i<m ; i++)
     {
+#ifdef L2P_USING_R
+        randrslt = (int)(unif_rand());
+#else
         randrslt = rand();
+#endif
         randlist[i] = randrslt*scale+1;
     }
 }/**/
@@ -1366,10 +1398,11 @@ int tablecalc(struct used_path_type usedpaths[], unsigned int num_used_paths, un
     struct used_path_type *uptr; // used path pointer
     int a,b,c,d;
     
-    fprintf(stderr,"debug in tablecalc() ingenecnt=%d num_used_paths=%d real_universe_cnt=%d \n",ingenecnt,num_used_paths,real_universe_cnt); fflush(stderr);
+//     fprintf(stderr,"debug in tablecalc() ingenecnt=%d num_used_paths=%d real_universe_cnt=%d \n",ingenecnt,num_used_paths,real_universe_cnt); fflush(stderr);
     
     pvals = (double *)malloc((size_t)(sizeof (double)*(num_used_paths)));  // all in pathway struct, don't need
     if (!pvals) { fprintf(stderr,"ERROR: no memory\n"); fflush(stderr); return -1; }
+    memset(pvals,0,sizeof (double)*(num_used_paths));
     n_sig_paths = 0;
     for (i=0 ; i<num_used_paths;i++)
     {
@@ -1417,10 +1450,12 @@ int tablecalc(struct used_path_type usedpaths[], unsigned int num_used_paths, un
         {
             OR = ((double)a*(double)d)/((double)c*(double)b);
             uptr->OR = OR;
+#if 0
             if (OR > 1000)
             {
                 fprintf(stderr,"Note:big OR %f, path %s\n", OR, uptr->acc);
             }
+#endif
         }
         else uptr->OR = OR = 99999;
         pv = exact22(a,b,c,d);
@@ -1435,7 +1470,7 @@ int tablecalc(struct used_path_type usedpaths[], unsigned int num_used_paths, un
     }
     sig_path_ptr = malloc((sizeof(struct used_path_type *)*n_sig_paths));
     // HERE WE WOULD WANT TO SORT THE SIGNIFICANT P VALUES, FOR SPEED LATER
-    struct used_path_type *tstptr;
+//    struct used_path_type *tstptr;
     I = 0;
     for (i=0; i<num_used_paths; i++)
     {
@@ -1443,7 +1478,7 @@ int tablecalc(struct used_path_type usedpaths[], unsigned int num_used_paths, un
         if((uptr->pval < SIG_P) & (uptr->OR > 1))
         {
             *(sig_path_ptr+I) = uptr; // since unlabelled, essential that this array of pointers has the same order as auguniverse
-            tstptr = *(sig_path_ptr+I);
+//            tstptr = *(sig_path_ptr+I);
             //printf("%11.2e\n", uptr->pval);
             uptr->rand_paths_more_sig = 0;
             I++;
@@ -1480,9 +1515,9 @@ int tablecalc(struct used_path_type usedpaths[], unsigned int num_used_paths, un
 #if 0
 unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths,unsigned int real_universe_cnt, unsigned int *real_universe)
 #endif
-unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths, unsigned int real_universe_cnt, unsigned int *real_universe, unsigned int seed)
+unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths, unsigned int real_universe_cnt, unsigned int *real_universe, int seed)
 {
-    /*
+/*
      Create a vector of gene names, with each name appearing as often as the number of pathways the gene appears in.
      From this list randomly select as many genes as on your DEG list.
      Replace repeats, need a list of unique genes
@@ -1492,46 +1527,51 @@ unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths
      
      Repeat a) etc. 200 times
      The counts/200 are approximate p values for the pathways.
-     */
-    struct tree_with_count *head = (struct tree_with_count *)0;
-    struct used_path_type **augreverse = (struct used_path_type **)0;
-    
-    struct used_path_type  *this_path;
+*/
+    unsigned int i,I,j,k,K;
     int utilctr;
     unsigned int this_gene;
     unsigned int ui = 0;
     unsigned int d_up = 0, d_down = 0, d_equal = 0;
-    unsigned int *index_ptr, *aug_ptr;
     unsigned int a, rand_d, rand_c, rand_b;
     int var_d;
     double randOR;
     unsigned int sig_rand_p_ct = 0;
-   // unsigned int *gene_ct;
     unsigned int aug_gene_ct = 0;
-    struct used_path_type *uptr = (void *)0;    // used path pointer
-    struct used_path_type *uptrx = (void *)0;    // used path pointer; utility
-#if 0
-    struct used_path_type *uptrx = (void *)0;    // used path pointer; utility
-#endif
-    struct used_path_type *thispath;
-    struct tree_with_count *thisnode;
-    unsigned int *randgenesindex;
-    unsigned int i,I,j,k,K;
+    unsigned int *randgenesindex = (unsigned int *)0;
     unsigned int *pool = (unsigned int *)0;
-    unsigned int *setseed;
     double pv;
+    struct tree_with_count *head = (struct tree_with_count *)0;
+    struct used_path_type **augreverse = (struct used_path_type **)0;
+    struct used_path_type  *this_path = (struct used_path_type *)0;
+    unsigned int *index_ptr = (unsigned int *)0;
+    unsigned int *aug_ptr = (unsigned int *)0;
+    struct used_path_type *uptr = (struct used_path_type *)0;    // used path pointer
+    struct used_path_type *thispath;
+    struct tree_with_count *thisnode = (struct tree_with_count *)0;
     double *pspace = (double *)0;   // array of pvalues[num_used_paths*NUM_PERMUTES]
     FILE *deg_path_count_file = (FILE *)0;
     FILE *predict_fp = (FILE *)0;
     FILE *pathgenes = (FILE *)0;
 
-fprintf(stderr,"in GPCC\n"); fflush(NULL); 
+#if 0
+   // unsigned int *gene_ct;
+    struct used_path_type *uptrx = (struct used_path_type *)0;    // used path pointer; utility
+#endif
+
+// fprintf(stderr,"in GPCC\n"); fflush(NULL); 
     //int *pool = (unsigned int *)0;
     // Set up augmented universe, count_tree, and pointers to pathways
 #if NELSON_C
+#if 0
     gene_path_countsfile = fopen("gene_pathway counts.txt", "w");
     deg_path_count_file = fopen("deg pathway counts.txt", "w");
     predict_fp = fopen("tst predictor of p vals.txt", "w");
+#else
+    gene_path_countsfile = (FILE *)0;
+    deg_path_count_file =  (FILE *)0;
+    predict_fp =  (FILE *)0;
+#endif
 #endif
     //path_gene_countsfile = fopen("pathway_gene counts.txt", "w");
     if (!usedpaths)
@@ -1540,7 +1580,9 @@ fprintf(stderr,"in GPCC\n"); fflush(NULL);
         return (unsigned int)0 ;
     }
     // get count of all genes with repititions in pathways
+#if 0
     pathgenes = fopen("paths_genes_names.txt", "w");
+#endif
     for (i=aug_gene_ct=0 ; i<num_used_paths ; i++)
     {         // get number of genes in all pathways, count duplicated gene names
         uptr = (usedpaths+i);
@@ -1551,8 +1593,13 @@ fprintf(stderr,"in GPCC\n"); fflush(NULL);
             fprintf(pathgenes, "%s\t %s\t %d\n", uptr->name, uptr->acc, uptr->egids[j]);
         }*/
     }
-    fflush(pathgenes);
+    if (pathgenes) fflush(pathgenes);
+#if 1
+// fix fix fix  rpf
+    auguniverse = malloc((aug_gene_ct+1) * sizeof(unsigned int)); // seems to be short by one uint , so just add it
+#else
     auguniverse = malloc(aug_gene_ct * sizeof(unsigned int));
+#endif
     if (!auguniverse)
     {
         fprintf(stderr,"ERROR: not enough memory in get_used_universe()\n"); fflush(stderr);
@@ -1562,7 +1609,7 @@ fprintf(stderr,"in GPCC\n"); fflush(NULL);
     // need to be sorted in gene number order
     // XXXXXXXXXX
     // NOTE MANY VARIANTS ON PUTTING TO TREE AND GETTING FROM TREE FOLLOW HERE
-    augreverse = malloc(sizeof(struct used_path_type *)*(aug_gene_ct)); // temp, sorted contentss go to ordrd_pathpointer
+    augreverse = malloc(sizeof(struct used_path_type *)*(aug_gene_ct)); // temp, sorted contents go to ordrd_pathpointer
     for (i=k=0;i<num_used_paths;i++)
     {
         uptr = (usedpaths+i);
@@ -1579,7 +1626,7 @@ fprintf(stderr,"in GPCC\n"); fflush(NULL);
         }
     }
     head = malloc(sizeof(struct tree_with_count));
-    head->val = *(auguniverse);
+    head->val = *(auguniverse); // entrez gene id
     real_genect = 1;
     head->count = 1; // each node starts with count 1
     head->deg = 0;
@@ -1598,15 +1645,19 @@ fprintf(stderr,"in GPCC\n"); fflush(NULL);
       }
     
     index_ptr = malloc(sizeof(unsigned int));
-    aug_ptr = malloc(sizeof(unsigned int));
-    aug_treepointers = malloc(sizeof(struct tree_with_count **)*aug_gene_ct);
-    treepointers = malloc(sizeof(struct tree_with_count **)*real_universe_cnt);
-    gene_path_cts = malloc(sizeof(unsigned int)*real_genect);
+    memset(index_ptr,0,sizeof(unsigned int));
+    aug_ptr = malloc(sizeof(unsigned int)*2); // wtf?
+    memset(aug_ptr,0,sizeof(unsigned int)*2);
+    aug_treepointers = malloc(sizeof(struct tree_with_count **)*(aug_gene_ct+1)); // valgrind complains
+    memset(aug_treepointers ,0,sizeof(struct tree_with_count **)*(aug_gene_ct+1)); // valgrind complains
+    // rpf treepointers = malloc(sizeof(struct tree_with_count **)*real_universe_cnt);
+    treepointers = malloc(sizeof(struct tree_with_count **)*(real_universe_cnt+1));
+    memset(treepointers ,0,sizeof(struct tree_with_count **)*(real_universe_cnt+1));
+    gene_path_cts = malloc(sizeof(unsigned int)*(real_genect+1)); // valgrind complains so add 1
+    memset(gene_path_cts ,0,sizeof(unsigned int)*(real_genect+1));
 
      malloc_pathpointers(head);
-     //free_tree_with_count(head);
-    // *gene_ct = real_genect;
-fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
+// fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
     utilctr = 0;
     for (ui=0 ; ui<aug_gene_ct ; ui++)
     {
@@ -1642,26 +1693,26 @@ fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
     // --in the pathway count list
     // rows will correspond to pathways in ptr_from_unique. Need a consistent list of pathways (1-n); the row refers to this list
     randgenesindex = malloc(sizeof(unsigned int *)*deg_count);
-    thispath = malloc(sizeof(struct used_path_type *));
+    // thispath = malloc(sizeof(struct used_path_type *));
 //     int oneside = 1;
     // tablecalc(usedpaths, num_used_paths, real_universe, real_universe_cnt, oneside);
-    tablecalc(usedpaths, num_used_paths,  real_universe_cnt);
+    tablecalc(usedpaths, num_used_paths,  real_universe_cnt); // mallocs sig_path_ptr
     //*setseed = 12345; // for testing, but get an error; never malloc'd integer storage
     for (i = 0; i < NUM_PERMUTES; i++)
     {
         // test: at i = 0, put in the actual genes
         // Choose ingenecnt unique genes
-        if ((i % 500) == 0) { fprintf(stderr,"permute i = %d\n", i); fflush(NULL); }
+//         if ((i % 500) == 0) { fprintf(stderr,"permute i = %d\n", i); fflush(NULL); }
         for (I=0 ; I<num_used_paths ; I++) // test, remove
         {
             uptr = (usedpaths+I);
             if(uptr->randhits > 0)
-                printf("randhits not initialized\n");
+                fprintf(stderr,"randhits not initialized\n");
         }
         // following returns the index of the chosen genes; this goes to pointer to all of paths for that gene
         // NEED R SWITCH HERE, FOR SEED
         if (SCALE_UNIVERSE) chooseAugRandList(aug_gene_ct, ingenecnt, 0, randgenesindex);
-        else chooseRandList(real_universe_cnt, ingenecnt, setseed, randgenesindex); // FIX SEED ISSUE
+        else chooseRandList(real_universe_cnt, ingenecnt, seed, randgenesindex); // FIX SEED ISSUE
         //for(j=0;j<ingenecnt;j++) printf("geneindex, gene, %d %d\n", randgenesindex[j], auguniverse[randgenesindex[j]]);
        /* if(i == 1)
         for(j=0;j<ingenecnt;j++)
@@ -1679,10 +1730,16 @@ fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
             {
                 printf("bad\n");
             }*/
-            for(k=0;k<thisnode->count;k++)
+            for(k=0 ; k<thisnode->count ; k++)
             {
                 thispath = thisnode->all_gene_paths[k];
+#if 1
+ // rpf this must be wrong
                 ++thispath->randhits;
+#else
+// should be this ?
+                (thispath+k)->randhits++;
+#endif
                 // printf("%s %d %d %d %d %d %d\n",thispath->acc, thispath->randhits, thisnode->count, thisnode->val, j,k, randgenesindex[j]);
                 // if(!strcmp(thispath->acc, "GO:0034612") && i == 14) printf("%d\n", thisnode->val);
             }
@@ -1703,8 +1760,8 @@ fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
                 //printf("%11.2e %d %d %d\n", uptr->pval, uptr->hitcnt, uptr->randhits, uptr->countover);
             else if (uptr->d == uptr->randhits) ++uptr->countequal;
             else ++uptr->countunder;
-            // quasi fdr; do for fewer permutes
-            if (i<NUM_QVAL_PERMUTES)
+                // quasi fdr; do for fewer permutes
+            if (0) // if (i < NUM_QVAL_PERMUTES)
             {
                 rand_d = uptr->randhits;
                 var_d = rand_d - uptr->d;
@@ -1732,8 +1789,8 @@ fprintf(stderr,"test after malloc_pathpointers\n"); fflush(NULL);
                     for (K=0; K<n_sig_paths; K++)
                     {
                         if(sig_path_ptr[K]->pval >= pv) ++sig_path_ptr[K]->rand_paths_more_sig;
-                        uptrx = sig_path_ptr[K];
 #if 0
+                        uptrx = sig_path_ptr[K];
                     unsigned int l;
                         if(!strcmp(sig_path_ptr[K]->name, "basal lamina") && pv < 3.7e-6)
                         {
@@ -1792,11 +1849,23 @@ gn rpf not used
     }
 #endif
 #ifdef L2P_USING_R
-    //PutRNGstate(); // restore random state
+    // PutRNGstate(); // restore random state
 #endif
+
+    if (randgenesindex) free(randgenesindex); 
+    if (head)  free_tree_with_count(head);
     if (pool)     free(pool);
     if (pspace)   free(pspace);
-fprintf(stderr,"in GPCC 99 end\n"); fflush(NULL);
+    if (index_ptr) free(index_ptr);
+    if (aug_ptr) free(aug_ptr);
+    if (aug_treepointers) free (aug_treepointers);
+    if (treepointers) free(treepointers);
+    if (gene_path_cts) free(gene_path_cts);
+    if (auguniverse) free(auguniverse);
+    if (augreverse) free(augreverse);
+    if (sig_path_ptr) free(sig_path_ptr);
+    if (deg_path_cts) free (deg_path_cts);
+// fprintf(stderr,"end GPCC\n"); fflush(NULL);
     return(0);
 }
 
@@ -2098,9 +2167,9 @@ fflush(NULL);
         GPCC(usedpaths,num_used_paths,real_universe_cnt, real_universe);
 #endif
         //GPCC(user_incnt,usedpaths,num_used_paths,real_universe_cnt,seed);
-fprintf(stderr,"in lp2func(), before GPCC\n"); fflush(NULL); 
+// fprintf(stderr,"in lp2func(), before GPCC\n"); fflush(NULL); 
         GPCC(usedpaths,num_used_paths,real_universe_cnt, real_universe, seed);
-fprintf(stderr,"in lp2func(), after  GPCC\n"); fflush(NULL); 
+// fprintf(stderr,"in lp2func(), after  GPCC\n"); fflush(NULL); 
 
     // RICH: this code does all comparisons out of GPCC
     //do_just_bh(user_incnt,usedpaths,num_used_paths,real_universe_cnt);
@@ -2505,6 +2574,7 @@ struct used_path_type *setup_used_paths(unsigned int *num_used_paths, unsigned i
     }
     u = (struct used_path_type *)malloc(sizeof(struct used_path_type) * (numpws+custom_cnt+lencust));
     if (!u) { fprintf(stderr,"ERROR: not enough memory.\n"); return (void *)0; }
+    memset(u,0,sizeof(struct used_path_type) * (numpws+custom_cnt+lencust));
 
     used_index = 0;
     for (i=0 ; i<numpws ; i++)
@@ -2781,7 +2851,7 @@ int main(int argc,char *argv[])
                   uptr->pval,  uptr->p_permute_over, uptr->p_permute_under, uptr->pval3,
                 uptr->acc, tmps, uptr->name);
 */
-fprintf(stderr,"hitcnt = %d\n",uptr->hitcnt); 
+// fprintf(stderr,"hitcnt = %d\n",uptr->hitcnt); 
             for (j=0 ; j<uptr->hitcnt ; j++)
             {
                 z = egid2hugo(*((uptr->genehits)+j));
@@ -2800,7 +2870,7 @@ fprintf(stderr,"hitcnt = %d\n",uptr->hitcnt);
            fdr_for_output = uptr->fdr;
            if (precise_flag)
            {
-               printf("%20.18f\t%20.18f\t%11.9f\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s",
+               printf("%20.18f\t%20.18f\t%11.9f\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t",
                    uptr->pval,     fdr_for_output, uptr->enrichment_score,
                    uptr->a, uptr->b, uptr->c, uptr->d,
                    uptr->acc, tmps,
@@ -2808,7 +2878,7 @@ fprintf(stderr,"hitcnt = %d\n",uptr->hitcnt);
            }
            else
            {
-               printf("%11.9f\t%11.9f\t%11.9f\t%11.7f\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s",
+               printf("%11.9f\t%11.9f\t%11.9f\t%11.7f\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t",
                    uptr->pval,     
                    uptr->pval2,     
                    fdr_for_output, uptr->enrichment_score,
@@ -2933,5 +3003,4 @@ IN Pathway A B
 NOT IN Pathway C D
  
 */
-
 

@@ -204,7 +204,7 @@ void int2bin(int n, char s[])
     return;
 }
 
-int bitCount_unsigned(unsigned int n) 
+static int bitCount_unsigned(unsigned int n) 
 {
     int cnt = 0;
     while (n) 
@@ -257,8 +257,7 @@ static int parsecats(char *z, unsigned int *catspat)
 }
 
 
-
-int l2pfunc_R(unsigned int *user_in_genes, unsigned int user_incnt, struct used_path_type *usedpaths,unsigned int num_used_paths,unsigned int real_universe_cnt, unsigned int *real_universe,int permute_flag)
+int l2pfunc_R(unsigned int *user_in_genes, unsigned int user_incnt, struct used_path_type *usedpaths,unsigned int num_used_paths,unsigned int real_universe_cnt, unsigned int *real_universe,int permute_flag,int seed)
 {
     struct used_path_type *uptr; // used path pointer 
     unsigned int ui_uk;
@@ -267,6 +266,8 @@ int l2pfunc_R(unsigned int *user_in_genes, unsigned int user_incnt, struct used_
     unsigned int j,k,ll;
     int ret = 0;
 
+#define UNUSED(x) (void)(x)
+UNUSED(seed);
     
     for (i=0 ; i<num_used_paths ; i++)
     {
@@ -291,15 +292,11 @@ int l2pfunc_R(unsigned int *user_in_genes, unsigned int user_incnt, struct used_
     }
     if (permute_flag)
     {
-        GPCC(usedpaths,num_used_paths,real_universe_cnt,real_universe,0);
+        GPCC(usedpaths,num_used_paths,real_universe_cnt,real_universe,seed);
 // unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths, unsigned int real_universe_cnt, unsigned int *real_universe, unsigned int seed);
     }
     return ret;
 }
-
-// prototypes, should be in pathworks.h
-// unsigned int hugo2egid(char *h);
-//int cmp_ui(const void *a, const void *b);
 
 
 SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn, SEXP universefn, SEXP permuteval, SEXP oneside_arg)
@@ -322,7 +319,6 @@ SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn
     int user_universe_flag = 0;
     int user_incnt = 0;
     int oneside = 0;
-//     int seed = 0;
     unsigned int num_used_paths = 0;
     unsigned int len = 0;
     unsigned int *user_in_genes = (unsigned int *)0;
@@ -337,6 +333,7 @@ SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn
     struct custom_type *mycustompw = (struct custom_type *)0;
     struct custom_type *mycustompwptr = (struct custom_type *)0;
     double fdr_for_output;
+    int seed = 0;
     SEXP list = (SEXP)0;
     SEXP pval = (SEXP)0;     // 1 
     SEXP fdr = (SEXP)0;      // 2
@@ -399,13 +396,14 @@ SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn
             list = VECTOR_ELT(custompws, i);
             len_of_vector = length(list);
             mycustompwptr->genes = (unsigned int *)malloc(sizeof(unsigned int)*len_of_vector);
+            memset( mycustompwptr->genes,0,(sizeof(unsigned int)*len_of_vector));
             mycustompwptr->numgenes = 0;   // will set this properly later
             for (j=0;j<len_of_vector;j++)
             {
                 tmps_cat[0] = (char)0;
                 strncpy(tmps_cat,CHAR(STRING_ELT(list, j)),PATH_MAX-2);
-                if (j == 0) mycustompwptr->name = strdup(tmps_cat);    // name
-                else if (j == 1) mycustompwptr->optional = strdup(tmps_cat); // optional,  might be a URL
+                if (j == 0) mycustompwptr->name = strdup(tmps_cat);    // name. check: must free this!
+                else if (j == 1) mycustompwptr->optional = strdup(tmps_cat); // could this be a URL? not yet.
                 else 
                 {
                     ui = hugo2egid(tmps_cat);
@@ -504,7 +502,7 @@ SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn
 // fprintf(stderr,"in l2pgetuniverseR 2.1 cats=%x after setup_used_paths() \n",catspat);  fflush(stderr);
 // NO, freed in setup_used_paths    if (in_universe) { free(in_universe); in_universe = (void *)0; }
 
-    (void)l2pfunc_R(user_in_genes,user_incnt,u,num_used_paths,real_universe_cnt,real_universe,permute_flag);
+    (void)l2pfunc_R(user_in_genes,user_incnt,u,num_used_paths,real_universe_cnt,real_universe,permute_flag,seed);
 
     if (permute_flag)
     {
@@ -512,7 +510,7 @@ SEXP l2p(SEXP lst, SEXP categories, SEXP universe, SEXP custompws, SEXP customfn
         PROTECT(Rret = Rf_allocVector(VECSXP, 15)); // a list with 13 elements
         protect_cnt++;
         maxflds = 15;
-fprintf(stderr,"pmf 1\n"); fflush(stderr);
+// fprintf(stderr,"pmf 1\n"); fflush(stderr);
         for (i=0 ; i<maxflds ; i++)
         {
 // xxx
@@ -576,7 +574,7 @@ fprintf(stderr,"pmf 1\n"); fflush(stderr);
             SET_STRING_ELT( genesinpathway, ui, mkChar( p2 ) );
             if (p2) { free(p2); p2 = (char *)0; }
         }
-fprintf(stderr,"pmf 2\n"); fflush(stderr);
+//fprintf(stderr,"pmf 2\n"); fflush(stderr);
     
         SET_VECTOR_ELT( Rret,0,pathway_name);
         SET_VECTOR_ELT( Rret,1, category);
@@ -602,7 +600,7 @@ fprintf(stderr,"pmf 2\n"); fflush(stderr);
         SET_STRING_ELT(cls, 0, mkChar("data.frame"));
         classgets(Rret, cls);
     
-fprintf(stderr,"pmf 4\n"); fflush(stderr);
+//fprintf(stderr,"pmf 4\n"); fflush(stderr);
         PROTECT(nam = allocVector(STRSXP, maxflds));     // names attribute (column names)
         protect_cnt++;
     
@@ -624,19 +622,19 @@ fprintf(stderr,"pmf 4\n"); fflush(stderr);
         SET_STRING_ELT( nam, 13, mkChar("pathway_type"));
         SET_STRING_ELT( nam, 14, mkChar("genesinpathway"));
     
-fprintf(stderr,"pmf 5\n"); fflush(stderr);
+//fprintf(stderr,"pmf 5\n"); fflush(stderr);
         namesgets(Rret, nam);
     
         PROTECT(rownam = allocVector(STRSXP, num_used_paths )); // row.names attribute
         protect_cnt++;
-fprintf(stderr,"pmf 6\n"); fflush(stderr);
+//fprintf(stderr,"pmf 6\n"); fflush(stderr);
         for (i=0 ; i<num_used_paths ; i++)
         {
             uptr = (u+i);
             SET_STRING_ELT(rownam, i, mkChar( (char *)uptr->acc) );
         }
         setAttrib(Rret, R_RowNamesSymbol, rownam);
-fprintf(stderr,"pmf 7\n"); fflush(stderr);
+//fprintf(stderr,"pmf 7\n"); fflush(stderr);
     }
     else
     {

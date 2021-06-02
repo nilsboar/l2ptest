@@ -1,0 +1,19 @@
+
+function f
+{
+cp ../PATHWAYS/$1 .
+}
+f l2p.c
+f big.h
+f pathworks.h
+f pwgenes.c
+f rinterface.c
+f utilfuncs.c
+
+function f2
+{
+cp ../PATHWAYS/R/$1 .
+}
+f2 l2p_0.0-8.tar.gz
+
+gzip pwgenes.c

@@ -3,7 +3,7 @@
 #define   PATHWORKS_H 1
 #endif
 
-#define MAXBSID 25000
+// #define MAXBSID 25000
      // last count: 24376  pathworks.txt
      //
 #define MAXBSIDPOSSIBLE 851568   
@@ -201,6 +201,7 @@ struct smallgenetype
     char *hugo;            // hugo = human gene name nomenclature authority  ("official gene name")
     unsigned int egid;              // entrez gene id
 };
+
 struct tree_with_count
 {
     unsigned int val; // entrez gene id
@@ -209,7 +210,7 @@ struct tree_with_count
     struct tree_with_count *left;
     struct tree_with_count *right;
     struct used_path_type **all_gene_paths; // all gene paths is an array of pointers
-    unsigned int pathindex; // which array mamber gets the pointer to pathway?
+    unsigned int pathindex; // which array member gets the pointer to pathway?
 };
 struct used_path_type
 {
@@ -287,6 +288,6 @@ int cmp_ordertype_by_val_REV(const void *a, const void *b);
 int cmp_usi(const void *a, const void *b);
 struct used_path_type *setup_used_paths(unsigned int *num_used_paths, unsigned int catspat, char universe_file[], unsigned int in_universe_cnt,unsigned int *in_universe, char custom_file[], unsigned int *real_universe_cnt_ptr,unsigned int **real_universe,unsigned int lencust,struct custom_type *mycustompw);
 int do_pvals_and_bh(unsigned int ingenecnt, struct used_path_type usedpaths[], unsigned int numusedpaths,unsigned int real_universe_cnt, int oneside);
-unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths, unsigned int real_universe_cnt, unsigned int *real_universe, unsigned int seed);
+unsigned int GPCC(struct used_path_type usedpaths[], unsigned int num_used_paths, unsigned int real_universe_cnt, unsigned int *real_universe, int seed);
 int do_just_bh(unsigned int ingenecnt, struct used_path_type usedpaths[], unsigned int num_used_paths,unsigned int real_universe_cnt);
 // void malloc_pathpointers(struct tree_with_count *node); // counts aligned with universe (real_universe)
