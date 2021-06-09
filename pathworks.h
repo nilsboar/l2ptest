@@ -201,7 +201,6 @@ struct smallgenetype
     char *hugo;            // hugo = human gene name nomenclature authority  ("official gene name")
     unsigned int egid;              // entrez gene id
 };
-
 struct tree_with_count
 {
     unsigned int val; // entrez gene id
@@ -220,11 +219,13 @@ struct used_path_type
     unsigned int numgenes;
     unsigned int numfixedgenes;
     unsigned int hitcnt;
+    double gpcountsum;
     unsigned int *genehits; // put hits here, reason: need to print them out
     double OR;
     double pval;
     double pval2; // alt
     double pval3; // permute
+    double pval4; // gp count corrected FET
     double fdr;
     int rand_paths_more_sig;
     double enrichment_score;                  // ratio
